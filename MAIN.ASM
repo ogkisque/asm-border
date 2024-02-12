@@ -43,7 +43,20 @@ PrintLine	proc
 			ret
 		endp
 ;-------------------------------------------------
-; Writes border  to video mem
+; Do delay
+; Entry:
+; Assumes:
+; Destr:	ax, cx, dx
+
+Delay		proc
+		mov ax, 8600h
+		mov cx, 3d
+		mov dx, 17d
+		int 15h
+		ret
+		endp
+;-------------------------------------------------
+; Writes border to video mem
 ; Entry:	bx - position of border
 ; Assumes:	es - 0b800h
 ; Destr:	ax, bx, cx, si, di
@@ -131,7 +144,7 @@ PrintShadow	proc
 ; Writes text to border
 ; Entry:	bx - position of border
 ; Assumes:	es - b800h
-; Destr:	ax, bx, si, di
+; Destr:	ax, bx, si, di, cx, dx, bp
 
 PrintText	proc
 
@@ -149,19 +162,39 @@ PrintText	proc
 		mov ah, 01001010b
 		mov si, 28d
 		xor di, di		; di = 0
+		xor bp, bp		; bp = 0
+		mov [si], ah
 
-		loop_text:
-			cmp di, 10
-			jge loop_text_stop
+		loop_text0:
+			cmp bp, 100
+			jge loop_text0_stop
 			
-			call PrintLine
-			inc ah
-			and ah, 01001111b
-			inc di
-			add bx, 104d
-			jmp loop_text
-		loop_text_stop:
-		ret
+			loop_text:
+				cmp di, 10
+				jge loop_text_stop
+			
+				call PrintLine
+				inc ah
+				and ah, 01001111b
+				inc di
+				add bx, 104d
+				jmp loop_text
+
+			loop_text_stop:
+				call Delay
+				inc bp
+				mov ah, [si]
+				inc ah
+				and ah, 01001111b
+				mov [si], ah
+				mov al, 3h
+				mov bx, 1444d
+				xor di, di
+				jmp loop_text0
+
+		loop_text0_stop:
+			ret
+		
 		endp
 ;-------------------------------------------------
 ; Exit of programm
