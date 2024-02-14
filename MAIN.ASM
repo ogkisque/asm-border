@@ -58,6 +58,7 @@ PrintText	proc
 			sub bl, bh 
 			xor bh, bh
 			add di, bx
+			and di, 0fffeh
 			call PrintTextLine
 
 			mov di, StartPos
@@ -70,6 +71,7 @@ PrintText	proc
 			sub bl, bh 
 			xor bh, bh
 			add di, bx
+			and di, 0fffeh
 			call PrintTextLine
 
 			ret
@@ -282,6 +284,7 @@ ParseStyle		proc
 
 				@@new_style:
 					inc si
+					dec cx
 					mov di, si
 					xor al, al
 					@@loop1:
