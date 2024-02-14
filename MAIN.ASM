@@ -5,42 +5,95 @@ org 100h
 
 include cods.asm
 
+locals @@
+
+SizeXP 		equ 0
+SizeYP		equ 1
+ColorBackP	equ 2
+NumStyleP	equ 3
+HeaderP		equ 4
+HeaderLenP	equ 6
+TextP		equ 7
+TextLenP	equ 9
+StyleP		equ 10
+StartPos	equ 1440d
+
 Start:
 		jmp Main
 
 ;----------------------------------------------------
+; Writes a symbol line to video mem
+; Entry:	ah - color attribute
+;			cx - num of symbols
+;			di - start position of text
+;			si - offset to first symbol
+; Assumes:	es - 0b800h
+; Destr:	al, si, di, cx
+   
+PrintTextLine	proc
+			
+				@loop1:
+					mov al, ds:[si]
+					inc si
+					stosw			; es:[di+=2] = ax
+					loop @loop1
+
+				ret
+				endp
+;----------------------------------------------------
 ; Writes a symbol to video mem
 ; Entry:	ah - color attribute
-;   		al - symbol
-;		bx - offset to video mem
 ; Assumes:	es - 0b800h
-; Destr:
+; Destr:	di, bx, cx, si, al
    
-PrintSym	proc
-		mov es:[bx], ax
-		ret
-		endp
+PrintText	proc
+			
+			mov di, StartPos
+			mov cl, ds:[HeaderLenP]
+			xor ch, ch
+
+			mov word ptr si, ds:[HeaderP]
+			mov bl, ds:[SizeXP]
+			mov bh, ds:[HeaderLenP]
+			sub bl, bh 
+			xor bh, bh
+			add di, bx
+			call PrintTextLine
+
+			mov di, StartPos
+			add di, 160d
+			mov cl, ds:[TextLenP]
+			xor ch, ch
+			mov word ptr si, ds:[TextP]
+			mov bl, ds:[SizeXP]
+			mov bh, ds:[TextLenP]
+			sub bl, bh 
+			xor bh, bh
+			add di, bx
+			call PrintTextLine
+
+			ret
+			endp
 ;----------------------------------------------------
-; Writes a lot of equal symbols to video mem
+; Writes a line to video mem
 ; Entry:	ah - color attribute
-;		al - symbol
-;		bx - offset to first symbol
-;		si - number of characters
+;		si - start position of style
+;		cl - length of border
+;		di - start position of line
 ; Assumes:	es - 0b800h
-; Destr: 	bx, cx
+; Destr: 	al, cl, di, si
 
 PrintLine	proc
-		xor cx, cx		; cx = 0
-		start_loop1:
-			cmp cx, si	; if cx >= si
-			jge stop_loop1	; break
-			call PrintSym
-			inc bx
-			inc bx		; bx += 2
-			inc cx		; cx++
-			jmp start_loop1
-		stop_loop1:
-			ret
+
+		lodsb		; al = ds:[si++]
+		stosw		; es:[di] = ax; di += 2
+		sub cl, 2
+		lodsb
+		rep stosw	; while (cx--) es:[di] = ax; di += 2
+		lodsb
+		stosw
+
+		ret
 		endp
 ;-------------------------------------------------
 ; Do delay
@@ -57,145 +110,232 @@ Delay		proc
 		endp
 ;-------------------------------------------------
 ; Writes border to video mem
-; Entry:	bx - position of border
+; Entry:	
 ; Assumes:	es - 0b800h
 ; Destr:	ax, bx, cx, si, di
 
 PrintBorder	proc
-		mov al, LUpBord
-		mov si, 1d
-		call PrintLine
+		mov si, ds:[StyleP]
+		mov di, StartPos
 
-		mov al, HorBord
-		mov si, 30d
-		call PrintLine
+		mov byte ptr cl, ds:[SizeXP]
 
-		mov al, RUpBord
-		mov si, 1d
 		call PrintLine
-		
-		xor di, di 		; di = 0
-		start_loop2:
-			add bx, 96d
-			cmp di, 10
-			jge stop_loop2
+		mov byte ptr bl, ds:[SizeYP]
+		sub bl, 2
+		@@loop:
+			mov byte ptr cl, ds:[SizeXP]
+			add di, 160d
+			sub di, cx
+			sub di, cx
 
-			mov al, VertBord
-			mov si, 1d
 			call PrintLine
+			sub si, 3d
+			dec bl
+			cmp bl, 0
+			jg @@loop
 
-			xor al, al	; al = 0 (empty)
-			mov si, 30d
-			call PrintLine
-
-			mov al, VertBord
-			mov si, 1d
-			call PrintLine
-			
-			inc di
-			jmp start_loop2
-		
-		stop_loop2:
-		mov al, LLowBord
-		mov si, 1d
+		add si, 3d
+		mov byte ptr cl, ds:[SizeXP]
+		add di, 160d
+		sub di, cx
+		sub di, cx
 		call PrintLine
 
-		mov al, HorBord
-		mov si, 30d
-		call PrintLine
-
-		mov al, RLowBord
-		mov si, 1d
-		call PrintLine
-		
 		ret
-		endp
+		endp	
 ;-------------------------------------------------
-; Writes shadow to border
-; Entry: 	bx - position of border
-; Assumes:	es - b800h
-; Destr:	ax, bx, di, si
+; Skip spaces
+; Destr: si, cx, al
 
-PrintShadow	proc
+SkipSpaces		proc
+				mov al, 020h
+				@@loop1:
+					cmp [si], al
+					jne @@loop2
 
-		add bx, 224d
-		xor al, al		; al = 0
-		mov ah, 01110000b	; ah = gray
-
-		xor di, di		; di = 0
-		mov si, 2d
-		start_loop3:
-			cmp di, 11
-			jge stop_loop3
-
-			call PrintLine
-			add bx, 156d
-			inc di
-			jmp start_loop3
-
-		stop_loop3:
-		sub bx, 60d
-		mov si, 32d
-		call PrintLine
-		
-		ret
-		endp		
+					inc si
+					loop @@loop1
+				@@loop2:
+				ret
+				endp
 ;-------------------------------------------------
-; Writes text to border
-; Entry:	bx - position of border
-; Assumes:	es - b800h
-; Destr:	ax, bx, si, di, cx, dx, bp
+; Parse number from command line
+; Entry:	bx - address to put the
+; Destr:	ax, si, cx 
 
-PrintText	proc
+ParseNum		proc
 
-		add bx, 30d
-		mov al, 'R'
-		call PrintSym
+				mov al, [si]
+				sub al, '0'
+				shl al, 1d
+				mov ah, al
+				shl al, 1d 
+				shl al, 1d 
+				add al, ah		; al = [si] * 10
 
-		add bx, 2d
-		mov al, 'T'
-		call PrintSym
+				inc si
+				dec cx
 
-		add bx, 132d
-
-		mov al, 3h
-		mov ah, 01001010b
-		mov si, 28d
-		xor di, di		; di = 0
-		xor bp, bp		; bp = 0
-		mov [si], ah
-
-		loop_text0:
-			cmp bp, 100
-			jge loop_text0_stop
-			
-			loop_text:
-				cmp di, 10
-				jge loop_text_stop
-			
-				call PrintLine
-				inc ah
-				and ah, 01001111b
-				inc di
-				add bx, 104d
-				jmp loop_text
-
-			loop_text_stop:
-				call Delay
-				inc bp
 				mov ah, [si]
-				inc ah
-				and ah, 01001111b
-				mov [si], ah
-				mov al, 3h
-				mov bx, 1444d
-				xor di, di
-				jmp loop_text0
+				sub ah, '0'
+				add al, ah
+				xor ah, ah
 
-		loop_text0_stop:
-			ret
-		
-		endp
+				inc si
+				dec cx
+
+				mov [bx], al
+
+				ret
+				endp
+;-------------------------------------------------
+; Parse color from command line
+; Entry:	bx - address to put the
+; Destr:	ax, si, cx 
+
+ParseCol		proc
+
+				mov al, [si]
+				cmp al, 'a'
+				jge @@sym
+					sub al, '0'
+					jmp @@stop
+				@@sym:
+					sub al, 'a'
+					add al, 10d
+				@@stop:
+				shl al, 1
+				shl al, 1
+				shl al, 1
+				shl al, 1
+
+				inc si
+				dec cx
+
+				mov ah, [si]
+				cmp ah, 'a'
+				jge @@sym1
+					sub ah, '0'
+					jmp @@stop1
+				@@sym1:
+					sub ah, 'a'
+					add ah, 10d
+				@@stop1:
+
+				add al, ah
+				xor ah, ah
+				inc si
+				dec cx
+
+				mov [bx], al
+				ret
+				endp
+;-------------------------------------------------
+; Parse header from command line
+; Entry:	
+; Destr:	ax, bx, si, cx 
+
+ParseHeader		proc
+
+				xor ah, ah
+				mov al, ':'
+				@@loop1:
+					cmp [si], al
+					je @@loop2
+
+					inc ah
+					inc si
+					loop @@loop1
+
+				@@loop2:
+					mov bx, HeaderLenP
+					mov [bx], ah
+
+				inc si
+				dec cx
+
+				ret
+				endp
+;-------------------------------------------------
+; Parse style from command line
+; Entry:	
+; Destr:	ax, bx, si, cx, dx, di
+
+ParseStyle		proc
+
+				mov al, '*'
+				cmp [si], al
+				je @@new_style
+					mov bx, NumStyleP
+					call ParseNum
+
+					mov di, offset StringArr
+					mov byte ptr dl, ds:[NumStyleP]
+					dec dl
+					mov dh, dl
+					shl dl, 3d
+					add dl, dh		; dl = ([NumStyleP] - 1) * 9
+					xor dh, dh
+					add di, dx
+					jmp @@break
+
+				@@new_style:
+					inc si
+					mov di, si
+					xor al, al
+					@@loop1:
+						inc si
+						inc al
+						dec cx
+						cmp al, 9d
+						je @@break
+						jmp @@loop1
+
+				@@break:
+					mov bx, StyleP
+					mov [bx], di
+
+				ret
+				endp
+;-------------------------------------------------
+; Parse command line
+; Destr: ax, bx, si, cx
+
+ParseCmd		proc
+				xor cx, cx			; cx = 0
+				mov cl, ds:[0080h]
+				mov si, 81h
+
+				call SkipSpaces
+				mov bx, SizeXP
+				call ParseNum
+
+				call SkipSpaces
+				mov bx, SizeYP
+				call ParseNum
+
+				call SkipSpaces
+				mov bx, ColorBackP
+				call ParseCol
+
+				call SkipSpaces
+				call ParseStyle
+
+				call SkipSpaces
+				mov bx, HeaderP
+				mov [bx], si
+				call ParseHeader
+
+				call SkipSpaces
+				mov bx, TextP
+				mov [bx], si
+				mov bx, TextLenP
+				xor ch, ch
+				mov [bx], cl
+
+				ret
+				endp
 ;-------------------------------------------------
 ; Exit of programm
 ; Entry:
@@ -209,20 +349,18 @@ ExitProg	proc
 		endp
 ;-------------------------------------------------
 Main:
-		mov ax, 0b800h
-		mov es, ax
+		call ParseCmd
 
-		mov ah, 01000001b
-		mov bx, 1280d
+		mov ax, 0b800h
+		mov es, ax			; es = b800h
+
+		mov byte ptr ah, ds:[ColorBackP]
 		call PrintBorder
- 
-		mov bx, 1280d
-		call PrintShadow
-		
-		mov ah, 01000001b
-		mov bx, 1280d
+
 		call PrintText
 
 		call ExitProg
+
+StringArr	db 0dah, 0c4h, 0bfh, 0b3h, 020h, 0b3h, 0c0h, , 0d9h, 0c9h, 0cdh, 0bbh, 0bah, 020h, 0bah, 0c8h, 0cdh, 0bch, 03h, 03h, 03h, 03h, 020h, 03h, 03h, 03h, 03h
 
 end    		Start
