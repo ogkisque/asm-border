@@ -22,6 +22,107 @@ Start:
 		jmp Main
 
 ;----------------------------------------------------
+; Writes hearts to border
+; Entry:
+; Assumes:	es - 0b800h
+; Destr:	al, si, di, cx, ah, bx, dx
+   
+PrintHearts		proc
+
+				mov bl, ds:[SizeYP]
+				xor bh, bh
+				sub bx, 3
+				mov si, bx			; si = [SizeYP] - 3
+
+				mov di, StartPos
+				add di, 322d
+
+				xor dx, dx
+				mov bl, ds:[SizeXP]
+				mov dl, bl
+				sub bx, 2
+				shl dl, 1		; dl *= 2
+				sub dl, 8
+
+				mov al, 03h 
+
+				@@loop1:
+					and ah, 00001111b
+					mov cx, bx
+					rep stosw			; while (cx--) es:[di+=2] = ax
+					add di, 156d
+					sub di, dx
+					dec si
+					inc ah
+					cmp si, 0
+					jne @@loop1
+
+				ret
+				endp
+;----------------------------------------------------
+; Writes hearts with changing colors to border
+; Entry:
+; Assumes:	es - 0b800h
+; Destr:	al, si, di, cx, ah, bx, dx
+   
+PrintAllHearts	proc
+
+				mov ah, 1
+				mov al, 3h
+				mov bx, 100d
+				@@loop1:
+					push bx
+					push ax
+					call PrintHearts
+					pop ax
+					pop bx
+					dec bx
+					inc ah
+					push ax
+					call Delay
+					pop ax
+					cmp bx, 0
+					jne @@loop1
+
+				ret
+				endp
+;----------------------------------------------------
+; Writes a shadow to border
+; Entry:
+; Assumes:	es - 0b800h
+; Destr:	al, si, di, cx, ah, bx
+   
+PrintShadow		proc
+
+				mov bl, ds:[SizeYP]
+				xor bh, bh
+				mov si, bx			; si = [SizeYP]
+				mov bl, ds:[SizeXP]
+				mov di, StartPos
+				add di, 160d
+				shl bx, 1d 			; bx *= 2
+				add di, bx
+
+				xor al, al			; al = 0
+				mov ah, 01110000b	; ah = gray color
+
+				@@loop1:
+					mov cx, 2d
+					rep stosw			; while (cx--) es:[di+=2] = ax
+					add di, 156d
+					dec si
+					cmp si, 0
+					jne @@loop1
+
+				sub di, 156d
+				sub di, bx
+				shr bx, 1d 			; bx /= 2
+				mov cx, bx
+				rep stosw
+
+				ret
+				endp
+;----------------------------------------------------
 ; Writes a symbol line to video mem
 ; Entry:	ah - color attribute
 ;			cx - num of symbols
@@ -32,11 +133,11 @@ Start:
    
 PrintTextLine	proc
 			
-				@loop1:
+				@@loop1:
 					mov al, ds:[si]
 					inc si
 					stosw			; es:[di+=2] = ax
-					loop @loop1
+					loop @@loop1
 
 				ret
 				endp
@@ -361,6 +462,8 @@ Main:
 		call PrintBorder
 
 		call PrintText
+		call PrintShadow
+		call PrintAllHearts
 
 		call ExitProg
 
