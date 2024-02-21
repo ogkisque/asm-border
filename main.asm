@@ -189,7 +189,9 @@ MyInt09	proc
 		in al, 60h
 		cmp al, 58h			; f12
 		jne @@continue
+
         call HotKey
+		xor cs:NeedUpdate, 1d
 
 		@@continue:
 
@@ -207,6 +209,33 @@ MyInt09	proc
 		db 0eah
 		OldOfs09 dw 0
 		OldSeg09 dw 0		; do old handle 
+		iret
+
+		endp
+;-------------------------------------------------
+; Handles the timer
+
+MyInt08	proc
+
+		push sp ss es ds bp si di dx cx bx ax
+
+		;call HotKey
+		mov al, cs:NeedUpdate
+		cmp al, 1d			
+		jne @@continue
+
+        call HotKey
+
+		@@continue:
+
+		mov al, 20h
+		out 20h, al
+
+        pop ax bx cx dx di si bp ds es ss sp
+
+		db 0eah
+		OldOfs08 dw 0
+		OldSeg08 dw 0		; do old handle 
 		iret
 
 		endp
@@ -251,10 +280,23 @@ Main:
 		mov ax, 2509h
 		int 21h					; overwrite handler of keyboard ints 
 
+		mov ax, 3508h
+		int 21h
+		mov OldOfs08, bx
+		mov bx, es
+		mov OldSeg08, bx		; save old handler of timer ints 
+
+		push cs
+		pop ds
+		mov dx, offset MyInt08
+		mov ax, 2508h
+		int 21h					; overwrite handler of timer ints 
+
 		call ExitProgTSR
 
 StringStyle	db 0c9h, 0cdh, 0bbh, 0bah, 020h, 0bah, 0c8h, 0cdh, 0bch
 RegsNames	db 'axbxcxdxsidibpdsesssspipcs'
+NeedUpdate	db 0
 
 EndProgramm:
 
